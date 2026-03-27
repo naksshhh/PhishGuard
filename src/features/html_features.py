@@ -275,40 +275,58 @@ def extract_html_features_from_file(
         return {name: 0.0 for name in HTML_FEATURE_NAMES}
 
 
+def _extract_html_worker(args):
+    """Worker function for multiprocessing."""
+    filepath, origin_url = args
+    return extract_html_features_from_file(filepath, origin_url)
+
+
 def extract_html_features_batch(
     mendeley_df: pd.DataFrame,
     html_dir: Path,
     show_progress: bool = True,
+    n_jobs: int = -1,
 ) -> pd.DataFrame:
     """
-    Extract HTML features for all Mendeley entries that have HTML files.
+    Extract HTML features for all Mendeley entries using multiprocessing.
 
     Args:
         mendeley_df: DataFrame with columns 'html_filename', 'url', 'html_exists'
         html_dir: Path to directory containing HTML files
         show_progress: Whether to show tqdm progress bar
+        n_jobs: Number of parallel jobs (-1 for all cores)
 
     Returns:
         DataFrame with 20 HTML feature columns + 'html_filename' for joining
     """
     from tqdm import tqdm
+    from multiprocessing import Pool, cpu_count
 
     available = mendeley_df[mendeley_df["html_exists"] == True].copy()
-    logger.info(f"Extracting HTML features from {len(available)} files")
+    total = len(available)
+    logger.info(f"Extracting HTML features from {total} files using multiprocessing...")
 
-    iterator = tqdm(available.iterrows(), total=len(available),
-                    desc="Extracting HTML features") if show_progress else available.iterrows()
+    if n_jobs == -1:
+        n_jobs = cpu_count()
+
+    # Prepare worker arguments
+    worker_args = [
+        (html_dir / row["html_filename"], row.get("url"))
+        for _, row in available.iterrows()
+    ]
 
     records = []
-    filenames = []
-    for _, row in iterator:
-        filepath = html_dir / row["html_filename"]
-        features = extract_html_features_from_file(filepath, row.get("url"))
-        features["html_filename"] = row["html_filename"]
-        records.append(features)
+    with Pool(processes=n_jobs) as pool:
+        # Use imap for progress tracking without loading all results into memory at once
+        for result in tqdm(pool.imap(_extract_html_worker, worker_args),
+                           total=total, desc="Extracting HTML", disable=not show_progress):
+            records.append(result)
 
-    result = pd.DataFrame(records)
-    return result
+    # Re-attach filenames for joining
+    result_df = pd.DataFrame(records)
+    result_df["html_filename"] = available["html_filename"].values
+    
+    return result_df
 
 
 def extract_smart_html_excerpt(html_content: str, max_chars: int = 2000) -> str:

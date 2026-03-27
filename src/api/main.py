@@ -8,9 +8,8 @@ import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import torch
-import joblib
 import google.generativeai as genai
 from dotenv import load_dotenv
 
@@ -24,6 +23,15 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 app = FastAPI(title="PhishGuard++ Cloud Backend")
+
+# Allow Chrome extension and localhost to call this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class AnalysisRequest(BaseModel):
     url: str
