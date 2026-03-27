@@ -1,0 +1,62 @@
+# ============================================================
+# PhishGuard++ Requirements
+# ============================================================
+
+# --- Core Data Science ---
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# --- ML Models ---
+lightgbm>=4.1.0
+xgboost>=2.0.0
+optuna>=3.4.0
+
+# --- Deep Learning ---
+torch>=2.1.0
+transformers>=4.35.0
+torchvision>=0.16.0
+
+# --- ONNX ---
+onnx>=1.15.0
+onnxmltools>=1.12.0
+onnxruntime>=1.16.0
+skl2onnx>=1.16.0
+
+# --- Explainability ---
+shap>=0.43.0
+
+# --- Data Augmentation ---
+sdv>=1.7.0          # CTGAN for tabular augmentation
+
+# --- Backend ---
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+httpx>=0.25.0       # Async HTTP for Safe Browsing API
+
+# --- Firebase ---
+firebase-admin>=6.2.0
+
+# --- Gemini ---
+google-generativeai>=0.3.0
+
+# --- Visualization & Logging ---
+matplotlib>=3.8.0
+seaborn>=0.13.0
+wandb>=0.16.0
+
+# --- Feature Engineering ---
+tldextract>=5.1.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# --- Image Processing ---
+Pillow>=10.1.0
+grad-cam>=1.5.0     # Grad-CAM for EfficientNet
+
+# --- Utilities ---
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+joblib>=1.3.0
