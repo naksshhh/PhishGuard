@@ -129,3 +129,53 @@ if __name__ == "__main__":
     print(f"\n📊 Summary:")
     print(df["attack_type"].value_counts().to_string())
     print(f"\nTotal: {len(df)} adversarial URLs")
+
+    # Proceed to extract features and evaluate using the baseline model
+    from src.features.url_features import extract_features_batch, URL_FEATURE_NAMES
+    from src.features.html_features import HTML_FEATURE_NAMES
+    import joblib
+
+    logger.info("Extracting features for adversarial URLs...")
+    # These are synthetic URLs, so we only extract URL features (no HTML exists)
+    url_features = extract_features_batch(df["url"], show_progress=True)
+    
+    # Pad HTML features with 0
+    for col in HTML_FEATURE_NAMES:
+        url_features[col] = 0.0
+        
+    # Ensure correct feature order (40 total)
+    feature_cols = URL_FEATURE_NAMES + HTML_FEATURE_NAMES
+    X_adv = url_features[feature_cols]
+    
+    # Load winning model
+    model_path = Path(__file__).resolve().parent.parent.parent / "models" / "lightgbm_stage1.pkl"
+    if model_path.exists():
+        logger.info(f"Evaluating adversarial test set using {model_path.name}...")
+        model = joblib.load(model_path)
+        
+        # All adversarial samples are phishing (label 1)
+        # We want to see how many the model correctly identifies
+        predictions = model.predict(X_adv)
+        
+        df["prediction"] = predictions
+        
+        # Calculate evasion rate per attack type
+        print("\n🛡️ Adversarial Robustness Results (Lower is better for Evasion Rate)")
+        print("="*65)
+        print(f"{'Attack Type':<20} | {'Total':<10} | {'Evaded':<10} | {'Evasion Rate':<15}")
+        print("-" * 65)
+        
+        for attack in df["attack_type"].unique():
+            subset = df[df["attack_type"] == attack]
+            total = len(subset)
+            evaded = (subset["prediction"] == 0).sum()
+            rate = evaded / total
+            print(f"{attack:<20} | {total:<10} | {evaded:<10} | {rate:.1%}")
+            
+        overall_evaded = (df["prediction"] == 0).sum()
+        overall_rate = overall_evaded / len(df)
+        print("-" * 65)
+        print(f"{'OVERALL':<20} | {len(df):<10} | {overall_evaded:<10} | {overall_rate:.1%}")
+        
+    else:
+        logger.warning(f"Model not found at {model_path}. Run baseline_race.py first.")

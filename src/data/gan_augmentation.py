@@ -55,7 +55,8 @@ def run_gan_augmentation(n_synthetic: int = 20000):
         metadata,
         enforce_rounding=False,
         epochs=50,
-        verbose=True
+        verbose=True,
+        cuda=True  # Ensure GPU is used
     )
     
     synthesizer.fit(train_data)
