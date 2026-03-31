@@ -87,13 +87,17 @@ def train_vae(epochs: int = 50, batch_size: int = 64, latent_dim: int = 32):
     dataset = TensorDataset(tensor_data)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
-    model = VAE(input_dim, latent_dim)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Using device: {device}")
+    
+    model = VAE(input_dim, latent_dim).to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     
     model.train()
     for epoch in range(epochs):
         train_loss = 0
         for batch_idx, (data,) in enumerate(dataloader):
+            data = data.to(device)
             optimizer.zero_grad()
             recon_batch, mu, logvar = model(data)
             loss = loss_function(recon_batch, data, mu, logvar)

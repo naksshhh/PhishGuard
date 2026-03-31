@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PhishGuard++ Offscreen ONNX Inference</title>
+</head>
+<body>
+    <!-- 
+      This offscreen document serves to run onnxruntime-web. 
+      Because Service Workers in MV3 disallow the use of dynamic import(),
+      which onnxruntime-web relies on to load its Wasm execution provider 
+      or handle chunks, we offload all Tier-1 ML operations here.
+    -->
+    <script src="lib/ort.wasm.min.js"></script>
+    <script type="module" src="offscreen.js"></script>
+</body>
+</html>

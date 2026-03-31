@@ -1,108 +1,119 @@
-"""
-PhishGuard++ — SHAP Explainability Pipeline
-Generates human-readable explanations of phishing verdicts
-using TreeSHAP for tabular models (XGBoost/LightGBM).
-"""
-
+import shap
+import joblib
+import pandas as pd
 import logging
 from pathlib import Path
+from typing import List, Dict
 
-import joblib
-import numpy as np
-import pandas as pd
-import shap
+# Import feature lists to stay consistent
+try:
+    from src.features.url_features import URL_FEATURE_NAMES, HUMAN_READABLE_NAMES as URL_HUMAN
+    from src.features.html_features import HTML_FEATURE_NAMES, HUMAN_READABLE_NAMES as HTML_HUMAN
+except ImportError:
+    # Fallback if imports fail during standalone execution
+    URL_FEATURE_NAMES = []
+    HTML_FEATURE_NAMES = []
+    URL_HUMAN = {}
+    HTML_HUMAN = {}
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-MODELS_DIR = BASE_DIR / "models"
-DATA_DIR = BASE_DIR / "datasets" / "processed"
+MODEL_PATH = BASE_DIR / "models" / "lightgbm_stage1.pkl"
 
-# Human-readable feature name mapping (synced with url_features + html_features)
-FEATURE_EXPLANATIONS = {
-    "url_length": "URL is unusually long",
-    "domain_length": "Domain name is unusually long",
-    "n_subdomains": "URL has many subdomains",
-    "entropy_domain": "Domain has high randomness (entropy)",
-    "has_ip_as_domain": "URL uses an IP address instead of a domain",
-    "suspicious_keyword_count": "URL contains suspicious keywords (login, verify, etc.)",
-    "punycode_detected": "URL uses internationalized encoding (punycode)",
-    "https_present": "URL uses HTTPS",
-    "form_action_external": "Page sends form data to an external site",
-    "iframe_count": "Page embeds hidden frames",
-    "hidden_input_count": "Page has hidden fields",
-    "login_form_present": "Page has a login/password form",
-    "external_link_ratio": "Most links point to other websites",
-    "script_count": "Page loads many scripts",
-    "meta_refresh_present": "Page redirects automatically",
-    "title_domain_mismatch": "Page title doesn't match the domain",
-    "favicon_external": "Favicon loads from another domain",
-}
+# Combined feature list and human-readable map
+FEATURE_ORDER = URL_FEATURE_NAMES + HTML_FEATURE_NAMES
+HUMAN_MAP = {**URL_HUMAN, **HTML_HUMAN}
 
+class PhishExplainer:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(PhishExplainer, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
 
-def explain_prediction(
-    model_path: Path,
-    feature_values: np.ndarray,
-    feature_names: list,
-    top_k: int = 5,
-) -> list[dict]:
-    """
-    Generate SHAP explanations for a single prediction.
+    def __init__(self):
+        if self._initialized:
+            return
+            
+        try:
+            if not MODEL_PATH.exists():
+                logger.error(f"Model not found at {MODEL_PATH}")
+                self.model = None
+                self.explainer = None
+                return
+                
+            self.model = joblib.load(MODEL_PATH)
+            # TreeExplainer is perfect for LightGBM
+            self.explainer = shap.TreeExplainer(self.model)
+            self._initialized = True
+            logger.info("SHAP Explainer initialized successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize SHAP Explainer: {e}")
+            self.model = None
+            self.explainer = None
 
-    Returns:
-        List of top-k features with their SHAP values and human-readable text.
-    """
-    model = joblib.load(model_path)
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(feature_values.reshape(1, -1))
+    def explain(self, features: Dict[str, float], top_n: int = 3) -> str:
+        """
+        Produce a human-readable explanation for a single prediction.
+        
+        Args:
+            features: Dictionary of 40 features
+            top_n: Number of top reasons to return
+            
+        Returns:
+            A string containing bulleted reasons
+        """
+        if not self.explainer:
+            return "Explainability engine offline."
+            
+        try:
+            # Ensure features are in the correct order for the model
+            df = pd.DataFrame([features], columns=FEATURE_ORDER)
+            
+            # Calculate SHAP values
+            # For LightGBM binary classifier, explainer returns (N_SAMPLES, N_FEATURES)
+            # or a list [shap_0, shap_1] for multiclass. 
+            # In latest versions, it usually returns the contribution to the log-odds (class 1).
+            shap_values = self.explainer.shap_values(df)
+            
+            # Handle list output (binary/multiclass consistency)
+            if isinstance(shap_values, list):
+                # Typically index 1 is the 'phish' class contribution
+                vals = shap_values[1][0] if len(shap_values) > 1 else shap_values[0][0]
+            else:
+                vals = shap_values[0]
 
-    # For binary classifiers, shap_values may be a list [class_0, class_1]
-    if isinstance(shap_values, list):
-        shap_values = shap_values[1]  # Phishing class
+            # Map values to names and sort
+            feature_importance = []
+            for i, val in enumerate(vals):
+                if val > 0: # Only care about features pushing towards 'PHISH'
+                    feat_name = FEATURE_ORDER[i]
+                    feature_importance.append({
+                        "name": feat_name,
+                        "value": val,
+                        "readable": HUMAN_MAP.get(feat_name, feat_name)
+                    })
+            
+            # Sort by highest contribution
+            feature_importance.sort(key=lambda x: x["value"], reverse=True)
+            
+            if not feature_importance:
+                return "No specific high-risk structural patterns detected."
+                
+            # Formatting as bulleted list
+            reasons = [f"• {item['readable']}" for item in feature_importance[:top_n]]
+            return "\n".join(reasons)
+            
+        except Exception as e:
+            logger.error(f"Error generating SHAP explanation: {e}")
+            return "Pattern analysis failed."
 
-    sv = shap_values[0]
-    indices = np.argsort(np.abs(sv))[::-1][:top_k]
+# Global Explainer
+explainer = PhishExplainer()
 
-    explanations = []
-    for idx in indices:
-        name = feature_names[idx]
-        explanations.append({
-            "feature": name,
-            "shap_value": float(sv[idx]),
-            "direction": "increases risk" if sv[idx] > 0 else "decreases risk",
-            "human_text": FEATURE_EXPLANATIONS.get(name, name.replace("_", " ").title()),
-        })
-
-    return explanations
-
-
-def explain_batch(model_path: Path, X: pd.DataFrame, top_k: int = 5):
-    """Generate SHAP explanations for a batch of predictions."""
-    model = joblib.load(model_path)
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X)
-
-    if isinstance(shap_values, list):
-        shap_values = shap_values[1]
-
-    logger.info(f"Generated SHAP values for {len(X)} samples")
-    return shap_values
-
-
-if __name__ == "__main__":
-    # Quick demo (requires a trained model)
-    lgb_pkl = MODELS_DIR / "lightgbm_stage1.pkl"
-    if lgb_pkl.exists():
-        test_path = DATA_DIR / "test_features.csv"
-        if test_path.exists():
-            df = pd.read_csv(test_path)
-            from src.features.url_features import URL_FEATURE_NAMES
-            from src.features.html_features import HTML_FEATURE_NAMES
-            feature_cols = URL_FEATURE_NAMES + HTML_FEATURE_NAMES
-            sample = df[feature_cols].iloc[0].values
-            result = explain_prediction(lgb_pkl, sample, feature_cols)
-            for r in result:
-                print(f"  {r['human_text']}: {r['direction']} (SHAP={r['shap_value']:.4f})")
-    else:
-        logger.info("No trained model. Run baseline_race.py first.")
+def get_phish_explanation(features: Dict[str, float]) -> str:
+    """Helper function to explain a phish prediction."""
+    return explainer.explain(features)
