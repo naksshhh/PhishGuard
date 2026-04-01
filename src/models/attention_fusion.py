@@ -41,20 +41,34 @@ class AttentionFusion(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, branch_scores: torch.Tensor) -> torch.Tensor:
+    def forward(self, branch_scores: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
         """
         Args:
             branch_scores: (batch, n_branches) — probabilities from each branch
+            mask: (batch, n_branches) — 1.0 for active branch, 0.0 for missing
         Returns:
             fused_score: (batch, 1) — final phishing probability
         """
-        weights = self.attention(branch_scores)
+        # 1. Calculate Attention Weights
+        attn_logits = self.attention[:3](branch_scores) # Linear + ReLU + Linear
+        
+        # 2. Apply Mask if provided
+        if mask is not None:
+            # Shift masked logits to a very large negative value so softmax is 0
+            attn_logits = attn_logits + (1.0 - mask) * -1e9
+            
+        weights = torch.softmax(attn_logits, dim=-1)
+        
+        # 3. Apply weights and classify
         weighted = branch_scores * weights
         return self.classifier(weighted)
 
-    def get_attention_weights(self, branch_scores: torch.Tensor) -> torch.Tensor:
+    def get_attention_weights(self, branch_scores: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
         """Expose attention weights for interpretability."""
-        return self.attention(branch_scores)
+        attn_logits = self.attention[:3](branch_scores)
+        if mask is not None:
+            attn_logits = attn_logits + (1.0 - mask) * -1e9
+        return torch.softmax(attn_logits, dim=-1)
 
 
 def train_fusion(

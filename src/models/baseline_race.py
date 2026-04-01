@@ -142,6 +142,41 @@ def optuna_lightgbm_objective(trial, X_train, y_train, X_val, y_val):
     return f1_score(y_val, y_pred)
 
 
+def train_lightweight_lgb(X_train, y_train, X_val, y_val):
+    """
+    Train a strictly pruned model for Tier 1 (Edge) ONNX.
+    Targets <300KB file size and <15ms latency.
+    """
+    logger.info("Training Lightweight LightGBM for Edge Tier...")
+    
+    # Pruned parameters: 
+    # - n_estimators=50-100 (fewer trees)
+    # - max_depth=6 (shorter trees)
+    # - num_leaves=31 (simpler nodes)
+    params = {
+        "n_estimators": 80,
+        "max_depth": 6,
+        "num_leaves": 31,
+        "learning_rate": 0.1,
+        "random_state": 42,
+        "n_jobs": -1,
+        "verbose": -1,
+    }
+    
+    model = lgb.LGBMClassifier(**params)
+    model.fit(
+        X_train, y_train,
+        eval_set=[(X_val, y_val)],
+        callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(period=0)],
+    )
+    
+    # Save as separate file
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, MODELS_DIR / "lightgbm_edge.pkl")
+    logger.info(f"✅ Saved Edge-optimized model to {MODELS_DIR / 'lightgbm_edge.pkl'}")
+    
+    return model
+
 def run_optuna_sweep(X_train, y_train, X_val, y_val, X_test, y_test, n_trials: int = 50):
     """Run Optuna Bayesian optimization on LightGBM."""
     logger.info(f"\n🔍 Running Optuna sweep ({n_trials} trials)...")
@@ -282,13 +317,16 @@ def main():
     for _, row in results_df.iterrows():
         try_wandb_log(row.to_dict(), row["model"])
 
-    # Step 2: Optuna sweep on LightGBM
+    # Step 2: Optuna sweep on LightGBM (The "Master" Cloud Model)
     final_model, study, final_metrics = run_optuna_sweep(
         X_train, y_train, X_val, y_val, X_test, y_test,
         n_trials=50,
     )
 
-    # Step 3: Feature importance plot
+    # Step 3: Lightweight Edge Model (The "Sentry" model for Tier 1 ONNX)
+    train_lightweight_lgb(X_train, y_train, X_val, y_val)
+
+    # Step 4: Feature importance plot
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     plot_feature_importance(
         final_model, feature_cols,

@@ -57,11 +57,18 @@ def load_data(model_type):
                 pass
             return ""
         
-        logger.info("Extracting HTML snippets from files... (This may take a moment)")
-        # In a very large dataset, doing this in pandas might be slow, 
-        # but for SOTA we need it. 
-        # We can parallelize or just use map
-        joined_df["html_content"] = joined_df["html_filename"].apply(get_html_snippet)
+        logger.info("Extracting HTML snippets from files in parallel... (This should be much faster)")
+        from concurrent.futures import ThreadPoolExecutor
+        
+        # Parallel file reading to avoid single-threaded I/O bottleneck
+        def wrap_get_snippet(row):
+            return get_html_snippet(row["html_filename"])
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            # Convert to list and run in parallel
+            html_contents = list(executor.map(get_html_snippet, joined_df["html_filename"].tolist()))
+            
+        joined_df["html_content"] = html_contents
         
         # Filter out rows where HTML couldn't be loaded
         joined_df = joined_df[joined_df["html_content"].str.len() > 0]
@@ -122,6 +129,8 @@ def fine_tune_bert(model_type: str = "phishbert"):
         fp16=True, # Mixed precision for less VRAM
         dataloader_num_workers=2,
         logging_steps=50,
+        report_to="wandb", # Enable Weights & Biases tracking
+        run_name=f"{model_type}_finetuning",
     )
     
     trainer = Trainer(

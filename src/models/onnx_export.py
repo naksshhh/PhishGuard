@@ -64,9 +64,14 @@ def export_lgb_to_onnx(model_path: Path, output_name: str = "phishguard_edge.onn
 
 
 if __name__ == "__main__":
-    # This expects models/lightgbm_stage1.pkl to exist (from baseline_race.py)
-    lgb_pkl = MODELS_DIR / "lightgbm_stage1.pkl"
+    # This expects models/lightgbm_edge.pkl to exist (from baseline_race.py)
+    lgb_pkl = MODELS_DIR / "lightgbm_edge.pkl"
     if lgb_pkl.exists():
         export_lgb_to_onnx(lgb_pkl)
     else:
-        logger.error(f"Model not found at {lgb_pkl}. Run baseline_race.py first.")
+        # Fallback to stage1 if edge-specific model isn't built
+        lgb_pkl = MODELS_DIR / "lightgbm_stage1.pkl"
+        if lgb_pkl.exists():
+            export_lgb_to_onnx(lgb_pkl)
+        else:
+            logger.error(f"Model not found at {lgb_pkl}. Run baseline_race.py first.")
