@@ -1,11 +1,14 @@
 import logging
 import asyncio
+import base64
+import io
 from pathlib import Path
+
+import pandas as pd
 import torch
 import torch.nn.functional as F
-import base64
+import joblib
 from PIL import Image
-import io
 
 try:
     from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -30,12 +33,23 @@ class FusionOrchestrator:
         self.codebert = None
         self.cb_tokenizer = None
         self.efficientnet = None
+        self.tabular = None
         self.fusion = None
         
         self.load_models()
 
     def load_models(self):
         logger.info(f"Loading SOTA models to {self.device}...")
+
+        # 0. Tabular (LightGBM Stage 1)
+        lgbm_path = MODELS_DIR / "lightgbm_stage1.pkl"
+        if lgbm_path.exists():
+            try:
+                import joblib
+                self.tabular = joblib.load(lgbm_path)
+                logger.info("✅ Loaded LightGBM Stage 1")
+            except Exception as e:
+                logger.error(f"Failed to load LightGBM: {e}")
         
         # 1. PhishBERT (Semantic URL)
         pb_path = MODELS_DIR / "phishbert"
@@ -79,6 +93,25 @@ class FusionOrchestrator:
             except Exception as e:
                 logger.error(f"Failed to load Fusion layer: {e}")
 
+    async def get_tabular_score(self, features: dict):
+        """Tier 2 Cloud (LightGBM)"""
+        if not self.tabular:
+            return 0.5
+            
+        try:
+            from src.explainability.shap_pipeline import FEATURE_ORDER
+            def _predict():
+                df = pd.DataFrame([features], columns=FEATURE_ORDER)
+                if hasattr(self.tabular, "predict_proba"):
+                    return self.tabular.predict_proba(df)[0][1]
+                return self.tabular.predict(df)[0]
+                
+            score = await asyncio.to_thread(_predict)
+            return float(score)
+        except Exception as e:
+            logger.error(f"Tabular prediction failed: {e}")
+            return 0.5
+
     async def get_phishbert_score(self, url: str):
         if not self.phishbert:
             return 0.5, 0.0 # score, mask
@@ -101,34 +134,58 @@ class FusionOrchestrator:
             return prob
         return await asyncio.to_thread(_predict), 1.0
 
+    def _predict_visual_b64(self, b64_screenshot: str):
+        try:
+            from torchvision import transforms
+            transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ])
+            # Decode B64
+            if "," in b64_screenshot:
+                b64_screenshot = b64_screenshot.split(",")[1]
+            img_data = base64.b64decode(b64_screenshot)
+            image = Image.open(io.BytesIO(img_data)).convert("RGB")
+            tensor = transform(image).unsqueeze(0).to(self.device)
+            with torch.no_grad():
+                with torch.amp.autocast('cuda') if self.device.type == 'cuda' else torch.no_grad():
+                    logits = self.efficientnet(tensor)
+                    prob = torch.sigmoid(logits).item()
+            return prob
+        except Exception as e:
+            logger.error(f"Visual b64 parse error: {e}")
+            return 0.5
+
     async def get_efficientnet_score(self, b64_screenshot: str):
         if not self.efficientnet or not b64_screenshot:
             return 0.5, 0.0
-        def _predict():
-            try:
-                from torchvision import transforms
-                transform = transforms.Compose([
-                    transforms.Resize((224, 224)),
-                    transforms.ToTensor(),
-                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-                ])
-                
-                # Decode B64
-                if "," in b64_screenshot:
-                    b64_screenshot = b64_screenshot.split(",")[1]
-                img_data = base64.b64decode(b64_screenshot)
-                image = Image.open(io.BytesIO(img_data)).convert("RGB")
-                tensor = transform(image).unsqueeze(0).to(self.device)
-                
-                with torch.no_grad():
-                    # Mixed precision for speed
-                    with torch.amp.autocast('cuda') if self.device.type == 'cuda' else torch.no_grad():
-                        prob = self.efficientnet(tensor).item()
-                return prob
-            except Exception as e:
-                logger.error(f"Visual parse error: {e}")
-                return 0.5
-        score = await asyncio.to_thread(_predict)
+        score = await asyncio.to_thread(self._predict_visual_b64, b64_screenshot)
+        return score, 1.0
+
+    def _predict_visual_path(self, image_path: Path):
+        try:
+            from torchvision import transforms
+            transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ])
+            image = Image.open(image_path).convert("RGB")
+            tensor = transform(image).unsqueeze(0).to(self.device)
+            with torch.no_grad():
+                with torch.amp.autocast('cuda') if self.device.type == 'cuda' else torch.no_grad():
+                    logits = self.efficientnet(tensor)
+                    prob = torch.sigmoid(logits).item()
+            return prob
+        except Exception as e:
+            logger.error(f"Visual path parse error: {e}")
+            return 0.5
+
+    async def get_efficientnet_score_from_path(self, image_path: Path):
+        if not self.efficientnet or not image_path.exists():
+            return 0.5, 0.0
+        score = await asyncio.to_thread(self._predict_visual_path, image_path)
         return score, 1.0
 
     async def fuse_predictions(self, tabular_score: float, url: str, html: str, screenshot: str):

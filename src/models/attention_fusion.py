@@ -72,50 +72,102 @@ class AttentionFusion(nn.Module):
 
 
 def train_fusion(
-    train_scores: np.ndarray,
-    train_labels: np.ndarray,
-    epochs: int = 100,
-    lr: float = 1e-3,
+    data_path: Path,
+    epochs: int = 500,
+    batch_size: int = 256,
+    lr: float = 2e-3,
 ):
     """
-    Train the attention fusion on branch scores.
-
-    Args:
-        train_scores: (N, n_branches) — stacked predictions from each branch
-        train_labels: (N,) — ground truth labels
+    Train the attention fusion with high-performance optimization strategies.
     """
-    n_branches = train_scores.shape[1]
+    import pandas as pd
+    from torch.utils.data import TensorDataset, DataLoader
+    
+    if not data_path.exists():
+        logger.error(f"Training data not found at {data_path}")
+        return
+
+    df = pd.read_csv(data_path)
+    logger.info(f"Loaded {len(df)} samples for SOTA fusion training.")
+
+    # Prepare Tensors
+    scores = df[["tabular_score", "url_score", "html_score", "visual_score"]].values
+    masks = df[["tabular_score", "url_score", "html_mask", "visual_mask"]].copy()
+    masks["tabular_score"] = 1.0
+    masks["url_score"] = 1.0
+    masks = masks.values
+    labels = df["label"].values
+
+    X_scores = torch.tensor(scores, dtype=torch.float32)
+    X_masks = torch.tensor(masks, dtype=torch.float32)
+    y = torch.tensor(labels, dtype=torch.float32).unsqueeze(1)
+
+    # Train/Val Split (80/20 for better verification)
+    total_samples = len(df)
+    indices = torch.randperm(total_samples)
+    split = int(0.8 * total_samples)
+    train_idx, val_idx = indices[:split], indices[split:]
+
+    train_ds = TensorDataset(X_scores[train_idx], X_masks[train_idx], y[train_idx])
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+
+    # Model & Optimization
+    n_branches = scores.shape[1]
     model = AttentionFusion(n_branches=n_branches)
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion = nn.BCELoss()
 
-    X = torch.tensor(train_scores, dtype=torch.float32)
-    y = torch.tensor(train_labels, dtype=torch.float32).unsqueeze(1)
+    best_val_acc = 0.0
+    best_state = None
+    patience = 40
+    no_improve = 0
 
-    model.train()
+    logger.info(f"Starting optimized training (500 epochs, batch_size={batch_size})...")
+
     for epoch in range(epochs):
-        optimizer.zero_grad()
-        pred = model(X)
-        loss = criterion(pred, y)
-        loss.backward()
-        optimizer.step()
+        model.train()
+        epoch_loss = 0
+        for b_scores, b_masks, b_labels in train_loader:
+            optimizer.zero_grad()
+            pred = model(b_scores, b_masks)
+            loss = criterion(pred, b_labels)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+        
+        scheduler.step()
 
-        if (epoch + 1) % 20 == 0:
-            acc = ((pred > 0.5).float() == y).float().mean()
-            logger.info(f"Epoch {epoch+1}/{epochs} — Loss: {loss:.4f}, Acc: {acc:.4f}")
+        # Validation
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            model.eval()
+            with torch.no_grad():
+                val_pred = model(X_scores[val_idx], X_masks[val_idx])
+                val_acc = ((val_pred > 0.5).float() == y[val_idx]).float().mean().item()
+                val_loss = criterion(val_pred, y[val_idx]).item()
+                
+                if val_acc > best_val_acc:
+                    best_val_acc = val_acc
+                    best_state = model.state_dict().copy()
+                    no_improve = 0
+                else:
+                    no_improve += 10 # Since we check every 10
 
-    # Save
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), MODELS_DIR / "attention_fusion.pth")
-    logger.info(f"Saved fusion model to {MODELS_DIR / 'attention_fusion.pth'}")
+            if (epoch + 1) % 50 == 0:
+                logger.info(f"Epoch {epoch+1:3d} | Loss: {epoch_loss/len(train_loader):.4f} | Val Acc: {val_acc:.4%}")
 
+        if no_improve >= patience:
+            logger.info(f"Early stopping at epoch {epoch+1}. Best Val Acc: {best_val_acc:.4%}")
+            break
+
+    # Save Best Model
+    if best_state:
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        torch.save(best_state, MODELS_DIR / "attention_fusion.pth")
+        logger.info(f"✅ SOTA Fusion Layer saved with Best Val Acc: {best_val_acc:.4%}")
+    
     return model
 
-
 if __name__ == "__main__":
-    # Demo with random data (replace with real branch scores)
-    logger.info("Running demo with synthetic branch scores...")
-    np.random.seed(42)
-    fake_scores = np.random.rand(1000, 4)  # 4 branches
-    fake_labels = (fake_scores.mean(axis=1) > 0.5).astype(float)
-    train_fusion(fake_scores, fake_labels, epochs=50)
+    DATA_PATH = BASE_DIR / "datasets" / "processed" / "fusion_train_v2.csv"
+    train_fusion(DATA_PATH)
