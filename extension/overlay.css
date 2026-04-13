@@ -1,0 +1,128 @@
+/* ============================================================
+   PhishGuard++ — Threat Interceptor Overlay
+   Premium Blur UI for Blocking Phishing Sites
+   ============================================================ */
+
+#phishguard-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 2147483647 !important; /* Maximum possible z-index */
+  background: rgba(12, 17, 32, 0.7) !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #f1f5f9 !important;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+  text-align: center !important;
+  animation: pg-fade-in 0.6s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+@keyframes pg-fade-in {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(40px); }
+}
+
+.pg-container {
+  max-width: 500px !important;
+  padding: 40px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 24px !important;
+}
+
+.pg-shield-glow {
+  width: 120px !important;
+  height: 120px !important;
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.2) 0%, transparent 70%) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: relative !important;
+  animation: pg-pulse-red 3s infinite ease-in-out !important;
+}
+
+@keyframes pg-pulse-red {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+
+.pg-icon {
+  width: 80px !important;
+  height: 80px !important;
+  filter: drop-shadow(0 0 20px rgba(239, 68, 68, 0.4)) !important;
+}
+
+.pg-title {
+  font-size: 32px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.04em !important;
+  margin: 0 !important;
+  background: linear-gradient(135deg, #fca5a5, #ef4444) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+.pg-description {
+  font-size: 16px !important;
+  line-height: 1.6 !important;
+  color: #94a3b8 !important;
+  margin: 8px 0 24px 0 !important;
+}
+
+.pg-buttons {
+  display: flex !important;
+  gap: 16px !important;
+  width: 100% !important;
+  justify-content: center !important;
+}
+
+.pg-btn {
+  padding: 14px 28px !important;
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+  font-size: 15px !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  border: none !important;
+  font-family: inherit !important;
+}
+
+.pg-btn-primary {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.2) !important;
+}
+
+.pg-btn-primary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 24px rgba(255, 255, 255, 0.3) !important;
+}
+
+.pg-btn-ghost {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #94a3b8 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.pg-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #f1f5f9 !important;
+}
+
+.pg-reason-box {
+  background: rgba(239, 68, 68, 0.05) !important;
+  border: 1px solid rgba(239, 68, 68, 0.2) !important;
+  padding: 12px 20px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  color: #fca5a5 !important;
+  font-weight: 500 !important;
+}

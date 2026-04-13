@@ -10,7 +10,8 @@
     "storage",
     "notifications",
     "alarms",
-    "offscreen"
+    "offscreen",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -42,7 +43,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["models/*", "wasm/*", "lib/*"],
+      "resources": ["models/*", "wasm/*", "lib/*", "overlay.css"],
       "matches": ["<all_urls>"]
     }
   ]

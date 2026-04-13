@@ -81,6 +81,58 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const features = extractHtmlFeatures();
     const excerpt = getHtmlExcerpt();
     sendResponse({ features, excerpt, url: window.location.href });
+  } else if (request.action === 'show_warning') {
+    injectWarningOverlay(request.reason);
+    sendResponse({ success: true });
   }
   return true;
 });
+
+function injectWarningOverlay(reason) {
+  if (document.getElementById('phishguard-overlay')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'phishguard-overlay';
+  
+  // Create an isolated shadow root to prevent page CSS interference
+  const shadow = overlay.attachShadow({ mode: 'open' });
+  
+  // Link the overlay CSS
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = chrome.runtime.getURL('overlay.css');
+  shadow.appendChild(link);
+
+  const container = document.createElement('div');
+  container.className = 'pg-container';
+  
+  container.innerHTML = `
+    <div class="pg-shield-glow">
+      <img src="${chrome.runtime.getURL('icons/icon128.png')}" class="pg-icon">
+    </div>
+    <h1 class="pg-title">Deceptive Site Ahead</h1>
+    <div class="pg-reason-box">AI Verdict: ${reason || 'High risk of phishing or credential theft.'}</div>
+    <p class="pg-description">
+      PhishGuard++ detected multiple structural and visual anomalies on this page. 
+      Attacker may be attempting to steal your password or financial info.
+    </p>
+    <div class="pg-buttons">
+      <button id="go-back" class="pg-btn pg-btn-primary">Get Me Out of Here</button>
+      <button id="proceed" class="pg-btn pg-btn-ghost">Proceed Anyway (Unsafe)</button>
+    </div>
+  `;
+
+  shadow.appendChild(container);
+  document.body.appendChild(overlay);
+
+  // Event Listeners
+  shadow.getElementById('go-back').addEventListener('click', () => {
+    window.history.back();
+    if (window.history.length <= 1) window.close();
+  });
+
+  shadow.getElementById('proceed').addEventListener('click', () => {
+    overlay.style.opacity = '0';
+    setTimeout(() => overlay.remove(), 400);
+  });
+}

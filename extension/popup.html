@@ -1,60 +1,129 @@
+w
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PhishGuard++</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
-  <div class="container">
+  <div class="app">
+
+    <!-- Ambient background blobs -->
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <!-- ── Header ─────────────────────────────────────────── -->
     <header>
       <div class="logo">
-        <span class="shield">🛡️</span>
-        <h1>PhishGuard++</h1>
+        <div class="logo-icon">
+          <img src="icons/icon48.png" alt="PhishGuard Shield" id="logo-img">
+        </div>
+        <div class="logo-text">
+          <span class="brand-name">PhishGuard</span><span class="brand-plus">++</span>
+        </div>
       </div>
-      <div id="status-badge" class="badge">Checking...</div>
+      <div id="status-badge" class="badge badge--checking">
+        <span class="badge-dot"></span>
+        <span class="badge-label">Scanning</span>
+      </div>
     </header>
 
-    <main>
-      <div class="score-section">
-        <div class="gauge-container">
-          <svg class="gauge" viewBox="0 0 100 50">
-            <path class="gauge-bg" d="M10,45 A40,40 0 0,1 90,45" />
-            <path id="gauge-fill" class="gauge-fill" d="M10,45 A40,40 0 0,1 90,45" style="stroke-dasharray: 0, 126;" />
-          </svg>
-          <div id="risk-percent" class="risk-value">0%</div>
-        </div>
-        <h2 id="verdict-text">Analyzing Site...</h2>
-      </div>
-
-      <div class="info-section">
-        <div class="tier-indicator">
-          <span>Analysis Tier:</span>
-          <span id="active-tier" class="tier-label">Tier 1 (Edge)</span>
-        </div>
-        <div id="explanation" class="explanation">
-          Initializing real-time AI protection...
+    <!-- ── Score Ring ─────────────────────────────────────── -->
+    <section class="score-card" id="score-card">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 120 120">
+          <!-- Background track -->
+          <circle class="ring-track" cx="60" cy="60" r="46" />
+          <!-- Score arc -->
+          <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="46" stroke-dasharray="0 289"
+            stroke-dashoffset="72" />
+          <!-- Inner glow -->
+          <circle class="ring-glow" id="ring-glow" cx="60" cy="60" r="46" stroke-dasharray="0 289"
+            stroke-dashoffset="72" />
+        </svg>
+        <div class="ring-content">
+          <div class="score-num" id="risk-percent">0%</div>
+          <div class="score-label" id="verdict-text">Scanning...</div>
         </div>
       </div>
 
-      <div class="actions">
-        <button id="details-btn" class="secondary">View Details</button>
-        <button id="report-btn-trigger" class="danger">Report Phish</button>
+      <div class="tier-bar">
+        <span class="tier-pill" id="active-tier">—</span>
+        <div class="tier-dots">
+          <span class="tdot tdot-1" id="td1"></span>
+          <span class="tdot tdot-2" id="td2"></span>
+          <span class="tdot tdot-3" id="td3"></span>
+        </div>
       </div>
+    </section>
 
-      <div id="report-form" class="report-form hidden">
-        <textarea id="report-reason" placeholder="Why is this site suspicious? (Optional)"></textarea>
-        <button id="submit-report-btn" class="primary">Submit Report</button>
+    <!-- ── Analysis Info ──────────────────────────────────── -->
+    <section class="info-card">
+      <div class="info-header">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-opacity="0.5" />
+          <path d="M6 4v4M6 2.5v.5" stroke="currentColor" stroke-linecap="round" />
+        </svg>
+        <span>Analysis</span>
       </div>
-    </main>
+      <p class="explanation" id="explanation">Initializing AI protection layer...</p>
+    </section>
 
+    <!-- ── Community Intel ────────────────────────────────── -->
+    <section class="intel-card">
+      <div class="intel-left">
+        <div class="intel-icon">👥</div>
+        <div>
+          <div class="intel-label">Community Intel</div>
+          <div class="intel-val" id="consensus-val">Querying...</div>
+        </div>
+      </div>
+      <div class="intel-badge" id="intel-badge">—</div>
+    </section>
+
+    <!-- ── Actions ────────────────────────────────────────── -->
+    <div class="actions">
+      <button id="details-btn" class="btn btn--ghost">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="6" stroke="currentColor" />
+          <path d="M7 6v4M7 4.5v.5" stroke="currentColor" stroke-linecap="round" />
+        </svg>
+        Details
+      </button>
+      <button id="report-btn-trigger" class="btn btn--danger">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M7 2L12 11H2L7 2Z" stroke="currentColor" stroke-linejoin="round" />
+          <path d="M7 6v3M7 10.5v.5" stroke="currentColor" stroke-linecap="round" />
+        </svg>
+        Report Phish
+      </button>
+    </div>
+
+    <!-- ── Report Form ─────────────────────────────────────── -->
+    <div id="report-form" class="report-form hidden">
+      <textarea id="report-reason" placeholder="What makes this site suspicious? (optional)"></textarea>
+      <button id="submit-report-btn" class="btn btn--primary">
+        Submit Report
+      </button>
+    </div>
+
+    <!-- ── Footer ─────────────────────────────────────────── -->
     <footer>
-      <p>Powered by Gemini 1.5 Flash</p>
-      <div class="trust-consensus">
-        Community Trust: <span id="consensus-val">N/A</span>
-      </div>
+      <span>Powered by Gemini 2.5 Flash</span>
+      <span class="footer-sep">•</span>
+      <span>AI Security Suite</span>
     </footer>
+
   </div>
-  <script src="popup.js"></script>
+  <script src="popup_v2.js"></script>
 </body>
+
 </html>

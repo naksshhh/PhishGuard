@@ -1,11 +1,12 @@
 // PhishGuard++ Background Service Worker
 // Orchestrates the 3-tier cascade architecture
+// Version: 2.0.1
 
 // Configuration
 const CONFIG = {
   TIER1_THRESHOLD: 0.35, // Score < 0.35 is SAFE
   PHISH_THRESHOLD: 0.75, // Score > 0.75 is PHISH
-  BACKEND_URL: 'http://localhost:8000',
+  BACKEND_URL: 'https://phishguard-backend-957267859324.us-central1.run.app',
 };
 
 // Offscreen Document Management
@@ -37,7 +38,18 @@ async function setupOffscreenDocument(path) {
   }
 }
 
-async function analyzeUrl(url, htmlFeatures, htmlExcerpt, screenshotBase64) {
+// ── Threat Interception & Notifications ───────────────────
+function showThreatNotification(url, verdict) {
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: 'PhishGuard++: Blocked Threat',
+    message: `Detected ${verdict} attack on ${url}. Site blocked.`,
+    priority: 2
+  });
+}
+
+async function analyzeUrl(url, htmlFeatures, htmlExcerpt, screenshotBase64, tabId = null) {
   console.log(`🚀 Analyzing: ${url}`);
 
   // Tier 1: Edge (ONNX) via Offscreen Document
@@ -71,7 +83,9 @@ async function analyzeUrl(url, htmlFeatures, htmlExcerpt, screenshotBase64) {
   }
 
   if (score > CONFIG.PHISH_THRESHOLD) {
-    return { verdict: 'PHISH', score, tier: 1 };
+    const result = { verdict: 'PHISH', score, tier: 1, reason: 'Detected structural phishing indicators.' };
+    if (tabId) triggerInterceptor(tabId, result.reason);
+    return result;
   }
 
   // Tier 2: Cloud (Escalation)
@@ -83,12 +97,47 @@ async function analyzeUrl(url, htmlFeatures, htmlExcerpt, screenshotBase64) {
       body: JSON.stringify({ url, htmlExcerpt: htmlExcerpt, screenshotBase64: screenshotBase64 })
     });
     const cloudResult = await response.json();
-    return { ...cloudResult, tier: cloudResult.tier || 2 };
+    const finalResult = { ...cloudResult, tier: cloudResult.tier || 2 };
+
+    if (finalResult.verdict === 'PHISH' && tabId) {
+      triggerInterceptor(tabId, finalResult.reason);
+    }
+
+    return finalResult;
   } catch (e) {
     console.warn('Tier 2 Escalation Failed:', e);
     return { verdict: 'SUSPICIOUS', score, tier: 1, reason: 'Site analysis inconclusive (Cloud Offline).' };
   }
 }
+
+function triggerInterceptor(tabId, reason) {
+  chrome.tabs.sendMessage(tabId, { action: 'show_warning', reason });
+  showThreatNotification('Current Site', 'PHISHING');
+}
+
+// Lifecycle Management
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "scan_link",
+    title: "Scan link with PhishGuard++",
+    contexts: ["link"]
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "scan_link") {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'PhishGuard++: Remote Scan',
+      message: `Analyzing link destination: ${info.linkUrl.substring(0, 50)}...`,
+      priority: 1
+    });
+    
+    // Remote analysis (No DOM features available for a link not visited)
+    analyzeUrl(info.linkUrl, [], "", null, tab.id);
+  }
+});
 
 // Ensure offscreen document is ready on start
 setupOffscreenDocument('offscreen.html').catch(console.error);
@@ -96,7 +145,7 @@ setupOffscreenDocument('offscreen.html').catch(console.error);
 // Message Listener
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'analyze' && request.target !== 'offscreen') {
-    analyzeUrl(request.url, request.features, request.excerpt, request.screenshot)
+    analyzeUrl(request.url, request.features, request.excerpt, request.screenshot, sender.tab?.id)
       .then(result => {
         if (result) sendResponse(result);
         else sendResponse({ verdict: 'ERROR', reason: 'No result from model', tier: 1 });

@@ -13,7 +13,8 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 from dotenv import load_dotenv
 
 # Absolute imports
@@ -25,8 +26,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # Initialize Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+_genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+GEMINI_MODEL_ID = "gemini-2.5-flash-preview-04-17"
 
 app = FastAPI(title="PhishGuard++ Cloud Backend")
 
@@ -116,60 +117,52 @@ async def run_tier2_analysis(features: dict):
 
 # ── Tier 3: Gemini Analysis ───────────────────────────────────
 def run_tier3_gemini(url: str, html_excerpt: str, screenshot_base64: Optional[str] = None):
-    logger.info(f"Escalating to Tier 3 (Gemini) for {url}...")
+    import json, base64
+    logger.info(f"Escalating to Gemini Tier 3 for {url}...")
     
-    prompt = f"""
-    Analyze the following URL and HTML excerpt for phishing indicators.
-    URL: {url}
-    HTML Excerpt:
-    {html_excerpt}
-    
-    Verify:
-    1. Brand impersonation (e.g., 'g00gle.com').
-    2. Credential harvesting forms (password/PII inputs to suspicious actions).
-    3. Urgency/Threatening language.
-    4. If an image is provided, check if the graphical logo/design accurately matches the real brand domain.
-    
-    You MUST output valid JSON only. Do not wrap in markdown blocks.
-    {{
-      "verdict": "PHISH" or "SAFE",
-      "score": 0.0 to 1.0,
-      "reason": "Clear explanation. If a screenshot was analyzed, explicitly state 'Screenshot Analyzed: [what you saw]'"
-    }}
-    """
-    
-    payload: list = [prompt]
-    if screenshot_base64:
-        # Chrome captureVisibleTab prefixes with: data:image/jpeg;base64,...
-        raw_b64 = screenshot_base64.split(",")[1] if "," in screenshot_base64 else screenshot_base64
-        payload.append({
-            "mime_type": "image/jpeg",
-            "data": raw_b64
-        })
+    prompt = f"""Analyze the following URL and HTML excerpt for phishing indicators.
+URL: {url}
+HTML Excerpt:
+{html_excerpt[:2000]}
 
+Verify:
+1. Brand impersonation (e.g., 'g00gle.com').
+2. Credential harvesting forms (password/PII inputs to suspicious actions).
+3. Urgency/threatening language.
+4. If a screenshot image is provided, check if the logo/design matches the claimed brand.
+
+Output ONLY valid JSON:
+{{
+  "verdict": "PHISH" or "SAFE",
+  "score": 0.0 to 1.0,
+  "reason": "Clear explanation."
+}}"""
+    
+    parts = [genai_types.Part.from_text(text=prompt)]
+    
+    if screenshot_base64:
+        raw_b64 = screenshot_base64.split(",")[1] if "," in screenshot_base64 else screenshot_base64
+        parts.append(genai_types.Part.from_bytes(
+            data=base64.b64decode(raw_b64),
+            mime_type="image/jpeg"
+        ))
+    
     try:
-        response = gemini_model.generate_content(
-            payload,
-            safety_settings={
-                'HARM_CATEGORY_HARASSMENT': 'BLOCK_NONE',
-                'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_NONE',
-                'HARM_CATEGORY_SEXUALLY_EXPLICIT': 'BLOCK_NONE',
-                'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE',
-            },
-            generation_config={"response_mime_type": "application/json"}
+        response = _genai_client.models.generate_content(
+            model=GEMINI_MODEL_ID,
+            contents=parts,
+            config=genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+            )
         )
-        import json
-        text = response.text
-        data = json.loads(text)
-        
-        return data.get("verdict", "SAFE").upper(), float(data.get("score", 0.1)), data.get("reason", "No reason provided.")
-        
+        data = json.loads(response.text)
+        return data.get("verdict", "SAFE").upper(), float(data.get("score", 0.1)), data.get("reason", "No reason.")
     except json.JSONDecodeError as e:
-        logger.error(f"Gemini JSON Parse Error: {e} - Responses: {response.text}")
-        return "ERROR", 0.5, f"Tier 3 JSON Parsing Failed: {response.text}"
+        logger.error(f"Gemini JSON Parse Error: {e}")
+        return "ERROR", 0.5, "Tier 3 JSON parsing failed."
     except Exception as e:
         logger.error(f"Gemini Tier 3 failed: {e}")
-        return "ERROR", 0.5, f"Tier 3 Gemini API Failed: {str(e)}"
+        return "ERROR", 0.5, f"Tier 3 Gemini API error: {str(e)}"
 
 @app.post("/analyze/cloud", response_model=AnalysisResponse)
 async def analyze_cloud(request: AnalysisRequest):
