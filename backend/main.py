@@ -257,6 +257,102 @@ async def check_url(url: str):
         verdict=result.get("verdict", "PENDING")
     )
 
+# ── Tier 4: Email Analysis ────────────────────────────────────
+
+class EmailAnalysisRequest(BaseModel):
+    subject: str
+    sender_display: str
+    sender_email: str
+    body_text: str
+    body_html: Optional[str] = None
+    headers: Optional[dict] = None
+    reply_to: Optional[str] = None
+
+class EmailAnalysisResponse(BaseModel):
+    verdict: str
+    score: float
+    branch: str
+    reason: str
+    ai_generated_likelihood: Optional[float] = None
+    persuasion_tactics: Optional[list] = None
+    header_details: Optional[dict] = None
+
+class SenderReportRequest(BaseModel):
+    domain: str
+    reason: Optional[str] = ""
+
+class SenderTrustResponse(BaseModel):
+    found: bool
+    report_count: int
+    reasons: list
+    verdict: str
+
+
+@app.post("/analyze/email", response_model=EmailAnalysisResponse)
+async def analyze_email_endpoint(request: EmailAnalysisRequest):
+    """
+    Tier 4: Email Phishing Detection via 3-branch cascade.
+    Branch 1: Header Forensics (instant)
+    Branch 2: RoBERTa + Cialdini persuasion features
+    Branch 3: Gemini suspicion-primed analysis
+    """
+    from backend.email_analyzer import analyze_email as run_email_analysis
+    from backend.email_analyzer import EmailAnalysisRequest as InternalRequest
+
+    logger.info(f"Email Analysis: '{request.subject}' from {request.sender_email}")
+
+    internal_req = InternalRequest(
+        subject=request.subject,
+        sender_display=request.sender_display,
+        sender_email=request.sender_email,
+        body_text=request.body_text,
+        body_html=request.body_html,
+        headers=request.headers,
+        reply_to=request.reply_to,
+    )
+
+    result = await run_email_analysis(internal_req)
+
+    return EmailAnalysisResponse(
+        verdict=result.verdict,
+        score=result.score,
+        branch=result.branch,
+        reason=result.reason,
+        ai_generated_likelihood=result.ai_generated_likelihood,
+        persuasion_tactics=result.persuasion_tactics,
+        header_details=result.header_details,
+    )
+
+
+@app.post("/community/report-sender")
+async def report_sender(request: SenderReportRequest):
+    """Report a malicious sender domain to the community."""
+    from . import firebase_db
+    success = firebase_db.report_malicious_sender(request.domain, request.reason)
+    if success:
+        return {"status": "success", "message": "Sender domain reported."}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to log sender report.")
+
+
+@app.get("/community/check-sender", response_model=SenderTrustResponse)
+async def check_sender(domain: str):
+    """Check community trust for a sender domain."""
+    from . import firebase_db
+    result = firebase_db.get_sender_trust(domain)
+
+    if "error" in result:
+        return SenderTrustResponse(found=False, report_count=0, reasons=[], verdict="ERROR")
+
+    return SenderTrustResponse(
+        found=result.get("found", False),
+        report_count=result.get("report_count", 0),
+        reasons=result.get("reasons", []),
+        verdict=result.get("verdict", "PENDING")
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

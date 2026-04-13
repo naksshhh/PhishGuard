@@ -142,6 +142,40 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 // Ensure offscreen document is ready on start
 setupOffscreenDocument('offscreen.html').catch(console.error);
 
+// ── Tier 4: Email Analysis ────────────────────────────────
+async function analyzeEmail(emailData) {
+  console.log(`📧 PhishGuard++ Email Analysis: "${emailData.subject}"`);
+  try {
+    const response = await fetch(`${CONFIG.BACKEND_URL}/analyze/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: emailData.subject || '',
+        sender_display: emailData.sender_display || '',
+        sender_email: emailData.sender_email || '',
+        body_text: emailData.body_text || '',
+        reply_to: emailData.reply_to || null,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend returned ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log(`📧 Email Result:`, result);
+    return result;
+  } catch (e) {
+    console.warn('Email analysis failed:', e);
+    return {
+      verdict: 'ERROR',
+      score: 0.0,
+      branch: 'error',
+      reason: `Analysis unavailable: ${e.message}`,
+    };
+  }
+}
+
 // Message Listener
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'analyze' && request.target !== 'offscreen') {
@@ -151,6 +185,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         else sendResponse({ verdict: 'ERROR', reason: 'No result from model', tier: 1 });
       })
       .catch(err => sendResponse({ verdict: 'ERROR', reason: err.message, tier: 1 }));
+    return true;
+  }
+
+  if (request.action === 'analyze_email') {
+    analyzeEmail(request.emailData)
+      .then(result => sendResponse(result))
+      .catch(err => sendResponse({ verdict: 'ERROR', reason: err.message, branch: 'error' }));
     return true;
   }
 });
