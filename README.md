@@ -8,7 +8,7 @@
 
 ---
 
-## 🏛️ Architecture: The 4-Tier Cascade
+## Architecture: The 4-Tier Cascade
 
 PhishGuard++ uses a hierarchical approach to balance speed and accuracy. Only the most ambiguous cases reach the heavy LLM layer.
 
@@ -31,7 +31,7 @@ graph TD
     Z --> G[Risk Score + SHAP Explanation]
 ```
 
-### 🚀 The Tiers
+### The Tiers
 1.  **Tier 1 (Edge):** Sub-15ms URL lexical analysis using **LightGBM** quantized to **ONNX (INT8)**. Runs locally in the browser.
 2.  **Tier 2 (Cloud):** Google Safe Browsing API check + high-precision Tabular analysis (XGBoost/LightGBM) on the backend.
 3.  **Tier 3 (Multimodal Fusion):** Deep semantic analysis ( **PhishBERT** for URLs, **CodeBERT** for HTML) and visual branding analysis ( **EfficientNet-B7**). Outputs are fused via an **Attention-Fusion** layer.
@@ -61,7 +61,7 @@ graph TD
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 solutions_challenge/
@@ -81,7 +81,7 @@ solutions_challenge/
 
 ---
 
-## 🏁 Getting Started
+## Getting Started
 
 ### 1. Backend Setup
 1.  Clone the repository and Create a virtual environment:
@@ -104,5 +104,5 @@ solutions_challenge/
 ---
 
 ## ⚖️ License
-MIT License — Part of the **Google Solutions Challenge 2026**.
+MIT License — Part of **Google Solutions Challenge 2026**.
 Developed for global digital safety.
