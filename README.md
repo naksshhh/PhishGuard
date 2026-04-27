@@ -2,6 +2,9 @@
 
 **PhishGuard** is an ultra-reliable, multi-modal phishing detection system featuring a **4-tier cascade architecture**. It provides real-time protection by orchestrating Edge, Cloud, and LLM (Gemini) intelligence to achieve >99.5% F1-score with minimal latency.
 
+<img width="439" height="644" alt="image" src="https://github.com/user-attachments/assets/1df43d67-896c-4520-98dc-c5779d46f4ce" />
+
+
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Google Solutions Challenge](https://img.shields.io/badge/Solutions%20Challenge-2026-green)](https://developers.google.com/community/solutions-challenge)
@@ -30,6 +33,7 @@ graph TD
     F --> Z
     Z --> G[Risk Score + SHAP Explanation]
 ```
+<img width="1118" height="570" alt="image" src="https://github.com/user-attachments/assets/b65ab62d-ce62-4880-8be8-d2071401f6a0" />
 
 ### The Tiers
 1.  **Tier 1 (Edge):** Sub-15ms URL lexical analysis using **LightGBM** quantized to **ONNX (INT8)**. Runs locally in the browser.
