@@ -107,6 +107,6 @@ solutions_challenge/
 
 ---
 
-## ⚖️ License
+## License
 MIT License — Part of **Google Solutions Challenge 2026**.
 Developed for global digital safety.
